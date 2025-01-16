@@ -197,35 +197,23 @@ class InterpolatorLoss(nn.Module):
         return self.alpha * mse_loss
 
 
-def rand_sampling(targets, mask, k_percent=0.4):
-    # Step 1: Flatten the tensors
-    targets_flat = targets.view(-1)
-    mask_flat = mask.view(-1)
+def rand_sampling(targets, binary_tensor, k_percent):
+    sampled_tensors = []
+    for i in range(binary_tensor.size(0)):  # Iterate through batch
+        tensor = binary_tensor[i, 0]  # Extract 256x256 tensor
+        ones_indices = torch.nonzero(tensor, as_tuple=False)  # Indices of 1s
+        k = int(k_percent * len(ones_indices))  # Calculate k%
+        
+        sampled_indices = ones_indices[torch.randperm(len(ones_indices))[:k]]  # Randomly sample k indices
+        sampled_tensor = torch.zeros_like(tensor)
+        sampled_tensor[sampled_indices[:, 0], sampled_indices[:, 1]] = 1  # Assign sampled indices to 1
+        
+        sampled_tensors.append(sampled_tensor.unsqueeze(0))
     
-    # Step 2: Get indices where mask is 1
-    valid_indices = torch.nonzero(mask_flat, as_tuple=False).squeeze(1)
-    
-    # Step 3: Determine the number of entries to sample
-    num_samples = int(k_percent * valid_indices.numel())
-    
-    # Step 4: Randomly sample indices
-    sampled_indices = valid_indices[torch.randperm(valid_indices.numel())[:num_samples]]
-    
-    # Step 5: Create a new tensor with all zeros
-    output_flat = torch.zeros_like(targets_flat)
-    
-    # Step 6: Set sampled indices to 1
-    output_flat[sampled_indices] = targets_flat[sampled_indices]
-    
-    # Step 7: Reshape back to the original shape
-    output = output_flat.view_as(targets)
-    
-    return output
+    return targets * torch.stack(sampled_tensors, dim=0)
 
 
 def uni_sampling(targets, mask, k_percent=0.4):
-    import torch
-    
     # Step 1: Flatten the tensors
     targets_flat = targets.view(-1)
     mask_flat = mask.view(-1)
@@ -251,7 +239,7 @@ def uni_sampling(targets, mask, k_percent=0.4):
     output = output_flat.view_as(targets)
     
     return output
-
+    
 
 def train(interpolator, train_hyper, train_loader, test_loader, loss_fn,\
           optimizer, scheduler, epochs, sample_type="random", save_path=""):
@@ -353,7 +341,7 @@ if __name__ == "__main__":
     sampler_test = DataLoader(sampler_test_dataset, batch_size=16, shuffle=False, generator=torch.Generator(device="cpu"))
     
     best_test_losses, best_test_files = {}, {}
-    start, end, interval = args.start_rate, args.end_rate, 2
+    start, end, interval = args.start_rate, args.end_rate, 1
     # path = "Final_USC_Save/"+f"{round(train_hyper, 1)}-{round(1 - train_hyper, 1)}-[{start}-{end}]"
     # if not os.path.exists(path):
     # 	os.mkdir(path)
